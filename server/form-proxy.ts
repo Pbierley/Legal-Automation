@@ -4,6 +4,21 @@ import { formByCode } from "../src/data/forms"
 
 const MAX_BYTES = 12_000_000
 
+function allowedOrigins() {
+  return (process.env.ALLOWED_ORIGIN ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+}
+
+function applyCors(req: IncomingMessage, res: ServerResponse) {
+  const origin = req.headers.origin
+  if (!origin || !allowedOrigins().includes(origin)) return
+  res.setHeader("Access-Control-Allow-Origin", origin)
+  res.setHeader("Vary", "Origin")
+  res.setHeader("Access-Control-Expose-Headers", "Content-Disposition")
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status
   res.setHeader("Content-Type", "application/json")
@@ -14,7 +29,22 @@ function fileNameFor(code: string) {
   return `${code}-amended-registered-agent.pdf`
 }
 
-async function fetchOfficialForm(req: IncomingMessage, res: ServerResponse) {
+export async function handleFormRequest(req: IncomingMessage, res: ServerResponse) {
+  applyCors(req, res)
+
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS")
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type")
+    res.statusCode = 204
+    res.end()
+    return
+  }
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    sendJson(res, 405, { error: "Use GET." })
+    return
+  }
+
   const url = new URL(req.url ?? "", "http://localhost")
   const code = url.searchParams.get("code")?.toUpperCase() ?? ""
   const form = formByCode(code)
@@ -66,6 +96,10 @@ async function fetchOfficialForm(req: IncomingMessage, res: ServerResponse) {
     res.setHeader("Content-Type", "application/pdf")
     res.setHeader("Content-Disposition", `attachment; filename="${fileNameFor(form.code)}"`)
     res.setHeader("Content-Length", String(bytes.byteLength))
+    if (req.method === "HEAD") {
+      res.end()
+      return
+    }
     res.end(bytes)
   } catch (error) {
     const message = error instanceof Error ? error.message : "Download failed."
@@ -80,7 +114,7 @@ function attach(middlewares: { use: (fn: (req: IncomingMessage, res: ServerRespo
       next()
       return
     }
-    void fetchOfficialForm(req, res)
+    void handleFormRequest(req, res)
   })
 }
 
