@@ -35,11 +35,12 @@ jobs:
           repo="${{ github.event.repository.name }}"
           owner="${{ github.repository_owner }}"
           if [ "$repo" = "$owner.github.io" ]; then
-            echo "VITE_BASE=/" >> "$GITHUB_ENV"
+            base="/"
           else
-            echo "VITE_BASE=/$repo/" >> "$GITHUB_ENV"
+            base="/$repo/"
           fi
-          npm run build
+          echo "Building with base $base"
+          VITE_BASE="$base" npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
